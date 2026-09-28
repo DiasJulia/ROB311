@@ -1,7 +1,15 @@
 {
   "emotions": ["anger", "disgust", "fear", "happiness", "sadness", "neutral"],
   "models": {
-    "scratch": { "label": "From-scratch CNN", "file": "models/scratch.onnx" },
-    "transfer": { "label": "Transfer learning", "file": "models/transfer.onnx" }
+    "scratch": {
+        "label": "Trained from Scratch CNN",
+        "file": "models/cnn_scratch.onnx",
+        "hop_length": 512
+    },
+    "transfer": {
+        "label": "Trained by Transfer learning",
+        "file": "models/transfer_vgg16.onnx",
+        "hop_length": 256
+    }
   }
 }

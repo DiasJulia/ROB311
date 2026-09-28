@@ -2,20 +2,18 @@ import * as ort from 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/o
 import WaveSurfer from 'https://cdn.jsdelivr.net/npm/wavesurfer.js@7/dist/wavesurfer.esm.js';
 import Spectrogram from 'https://cdn.jsdelivr.net/npm/wavesurfer.js@7/dist/plugins/spectrogram.esm.js';
 
+import config from './config.json' with { type: 'json' };
+
 ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/';
 
-const MODEL_FILE = 'models/transfer_vgg16.onnx';
-const MODEL_LABEL = 'VGG16';
-
-const EMOTIONS = ['anger', 'boredom', 'disgust', 'fear', 'happiness', 'neutral', 'sadness'];
+const EMOTIONS = config.emotions;
+const MODELS = config.models;
 
 const SR = 16000;
 const N_MELS = 128;
 const N_FFT = 1024;
-const HOP_LENGTH = 256;            
 const WINDOW_SAMPLES = SR;         
 const WINDOW_HOP = SR / 2;         
-const N_FRAMES = 1 + Math.floor(WINDOW_SAMPLES / HOP_LENGTH); 
 const TOP_DB = 80;                
 
 const NORM_MEAN = 25.0;
@@ -32,21 +30,18 @@ const modelSelect = document.getElementById('model-select');
 const inferButton = document.getElementById('infer-button');
 const inferenceText = document.getElementById('inference-text');
 
-const liveCanvas = document.getElementById('live-spectrogram');
-const liveCtx = liveCanvas?.getContext('2d');
-
 let mediaStream = null;
 let mediaRecorder = null;
 let audioChunks = [];
 let stopTimerId = null;
 let playbackUrl = null;
-let microphoneStreamPromise = null;
 let latestAudioBlob = null;
-let sessionPromise = null;
+
+// Cache de sessões ONNX
+const sessionPromises = new Map();
 
 let audioContext = null;
 let analyserNode = null;
-let liveAnimationFrame = null;
 let wavesurfer = null;
 
 function setStatus(text) {
@@ -77,12 +72,6 @@ function cleanup() {
 		clearTimeout(stopTimerId);
 		stopTimerId = null;
 	}
-
-	if (liveAnimationFrame) {
-		cancelAnimationFrame(liveAnimationFrame);
-		liveAnimationFrame = null;
-	}
-
 	mediaRecorder = null;
 	audioChunks = [];
 }
@@ -178,17 +167,18 @@ function fft(real, imag) {
 	}
 }
 
-function melSpectrogramDb(chunk) {
+function melSpectrogramDb(chunk, hopLength) {
+	const nFrames = 1 + Math.floor(WINDOW_SAMPLES / hopLength);
 	const pad = N_FFT / 2;
 	const padded = new Float32Array(chunk.length + 2 * pad);
 	padded.set(chunk, pad);
-	const out = new Float32Array(N_MELS * N_FRAMES);
+	const out = new Float32Array(N_MELS * nFrames);
 	const real = new Float64Array(N_FFT);
 	const imag = new Float64Array(N_FFT);
 	const power = new Float64Array(N_FFT / 2 + 1);
 
-	for (let t = 0; t < N_FRAMES; t += 1) {
-		const start = t * HOP_LENGTH;
+	for (let t = 0; t < nFrames; t += 1) {
+		const start = t * hopLength;
 		for (let n = 0; n < N_FFT; n += 1) {
 			real[n] = padded[start + n] * HANN[n];
 			imag[n] = 0;
@@ -199,14 +189,14 @@ function melSpectrogramDb(chunk) {
 			const filter = MEL_FILTERS[m];
 			let energy = 0;
 			for (let k = 0; k < filter.length; k += 1) energy += filter[k] * power[k];
-			out[m * N_FRAMES + t] = 10 * Math.log10(Math.max(energy, 1e-10));
+			out[m * nFrames + t] = 10 * Math.log10(Math.max(energy, 1e-10));
 		}
 	}
 	let max = -Infinity;
 	for (let i = 0; i < out.length; i += 1) if (out[i] > max) max = out[i];
 	const floor = max - TOP_DB;
 	for (let i = 0; i < out.length; i += 1) if (out[i] < floor) out[i] = floor;
-	return out;
+	return { features: out, nFrames };
 }
 
 function splitWindows(samples) {
@@ -235,16 +225,17 @@ async function blobToSamples(blob) {
 	return new Float32Array(resampled.getChannelData(0));
 }
 
-function getSession() {
-	if (!sessionPromise) {
-		sessionPromise = ort.InferenceSession.create(new URL(MODEL_FILE, import.meta.url).href, {
+function getSession(filePath) {
+	if (!sessionPromises.has(filePath)) {
+		const promise = ort.InferenceSession.create(new URL(filePath, import.meta.url).href, {
 			executionProviders: ['wasm'],
 		}).catch((error) => {
-			sessionPromise = null;
+			sessionPromises.delete(filePath);
 			throw error;
 		});
+		sessionPromises.set(filePath, promise);
 	}
-	return sessionPromise;
+	return sessionPromises.get(filePath);
 }
 
 function getInputShape(session, inputName) {
@@ -269,27 +260,40 @@ function toProbabilities(values) {
 
 async function runInference() {
 	if (!latestAudioBlob) { inferenceText.textContent = 'Record audio first to run inference.'; return; }
+	
+	const selectedKey = modelSelect?.value;
+	const selectedModel = MODELS[selectedKey];
+
+	if (!selectedModel) {
+		setError('Please select a valid model.');
+		return;
+	}
+
 	clearError();
 	inferButton.disabled = true;
 
 	try {
-		inferenceText.textContent = 'Running inference...';
-		const session = await getSession();
+		inferenceText.textContent = `Loading ${selectedModel.label} & running inference...`;
+		
+		const session = await getSession(selectedModel.file);
 		const inputName = session.inputNames[0];
 		const outputName = session.outputNames[0];
 		const expectedShape = getInputShape(session, inputName);
 		const channelsFirst = isChannelsFirst(expectedShape);
-		const dims = channelsFirst ? [1, 1, N_MELS, N_FRAMES] : [1, N_MELS, N_FRAMES, 1];
+
+		const hopLength = selectedModel.hop_length || 256;
 
 		const samples = await blobToSamples(latestAudioBlob);
 		const windows = splitWindows(samples);
 		const average = new Float64Array(EMOTIONS.length);
 
 		for (const chunk of windows) {
-			const features = melSpectrogramDb(chunk);
+			const { features, nFrames } = melSpectrogramDb(chunk, hopLength);
 			for (let i = 0; i < features.length; i += 1) {
 				features[i] = (features[i] - NORM_MEAN) / NORM_STD;
 			}
+			
+			const dims = channelsFirst ? [1, 1, N_MELS, nFrames] : [1, N_MELS, nFrames, 1];
 			const outputs = await session.run({ [inputName]: new ort.Tensor('float32', features, dims) });
 			const probs = toProbabilities(outputs[outputName].data);
 			for (let i = 0; i < EMOTIONS.length; i += 1) average[i] += probs[i] / windows.length;
@@ -297,7 +301,7 @@ async function runInference() {
 
 		const ranking = Array.from(average, (p, i) => ({ label: EMOTIONS[i], p })).sort((a, b) => b.p - a.p);
 		const fmt = (r) => `${r.label} ${(r.p * 100).toFixed(1)}%`;
-		inferenceText.textContent = `${MODEL_LABEL}: ${fmt(ranking[0])} (${ranking.slice(1, 3).map(fmt).join(', ')})`;
+		inferenceText.textContent = `${selectedModel.label}: ${fmt(ranking[0])} (${ranking.slice(1, 3).map(fmt).join(', ')})`;
 	} catch (error) {
 		setError(error instanceof Error ? error.message : 'Inference failed.');
 		inferenceText.textContent = 'Inference failed.';
@@ -315,8 +319,7 @@ async function startRecording() {
 		if (!navigator.mediaDevices?.getUserMedia) throw new Error('getUserMedia is not available.');
 
 		if (!mediaStream) {
-			microphoneStreamPromise = navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-			mediaStream = await microphoneStreamPromise;
+			mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
 		}
 
 		audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -355,7 +358,7 @@ async function startRecording() {
 
 			playbackContainer.classList.remove('d-none');
 			inferenceContainer.classList.remove('d-none');
-			inferenceText.textContent = 'Ready. Press "Run inference".';
+			inferenceText.textContent = 'Ready. Select a model and press "Evaluate".';
 			inferButton.disabled = false;
 			setStatus('Press to start recording');
 			setControls(false);
@@ -374,7 +377,6 @@ async function startRecording() {
 		setStatus('Press to start recording');
 		setControls(false);
 		setError(error instanceof Error ? error.message : 'Unable to start recording.');
-		microphoneStreamPromise = null;
 	}
 }
 
@@ -395,10 +397,14 @@ function toggleRecording() {
 	if (mediaRecorder.state === 'paused') { mediaRecorder.resume(); setStatus('recording'); setControls(true); }
 }
 
-const option = document.createElement('option');
-option.value = 'vgg16';
-option.textContent = MODEL_LABEL;
-modelSelect.replaceChildren(option);
+for (const [key, model] of Object.entries(MODELS)) {
+    if (modelSelect) {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = model.label;
+        modelSelect.appendChild(option);
+    }
+}
 
 recordButton.addEventListener('click', toggleRecording);
 if (stopButton) stopButton.addEventListener('click', stopRecording);

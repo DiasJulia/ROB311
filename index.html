@@ -15,7 +15,7 @@
 			<div class="col-12 col-md-8 col-lg-6">
 				<section class="card shadow-sm">
 					<div class="card-body p-4 p-md-5">
-						<div class="d-flex flex-column gap-2 flex-wrap mb-3 align-items-center">
+						<div class="d-flex flex-column gap-2 align-items-center mb-3">
 							<button id="record-button" type="button" class="btn btn-secondary record-toggle-button" aria-label="Start recording" title="Start recording">
 								<span class="record-icon" aria-hidden="true"></span>
 								<span class="pause-icon" aria-hidden="true"></span>
@@ -36,9 +36,7 @@
 							<div class="col-12 col-md-8">
 								<select id="model-select" class="form-select" name="model-select">
                                     <option value="" disabled selected>Select a model</option>
-									<option value="scratch">From-scratch CNN</option>
-									<option value="transfer">Transfer learning</option>
-								</select>
+                                </select>
 							</div>
 							<div class="col-12 col-md-4 d-grid">
 								<button id="infer-button" type="button" class="btn btn-secondary" disabled>Evaluate</button>

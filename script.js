@@ -1,4 +1,4 @@
-        const recordButton = document.getElementById('record-button');
+const recordButton = document.getElementById('record-button');
 const stopButton = document.getElementById('stop-button');
 const statusText = document.getElementById('status-text');
 const errorText = document.getElementById('error-text');
@@ -9,6 +9,7 @@ let mediaRecorder = null;
 let audioChunks = [];
 let stopTimerId = null;
 let playbackUrl = null;
+let microphoneStreamPromise = null;
 
 function setStatus(text) {
 	statusText.textContent = text;
@@ -23,19 +24,18 @@ function clearError() {
 }
 
 function setControls(recording) {
-	recordButton.disabled = recording;
-	stopButton.disabled = !recording;
+	if (stopButton) {
+		stopButton.disabled = !recording;
+	}
+	recordButton.classList.toggle('is-recording', recording);
+	recordButton.setAttribute('aria-label', recording ? 'Pause recording' : 'Start recording');
+	recordButton.setAttribute('title', recording ? 'Pause recording' : 'Start recording');
 }
 
 function cleanup() {
 	if (stopTimerId) {
 		clearTimeout(stopTimerId);
 		stopTimerId = null;
-	}
-
-	if (mediaStream) {
-		mediaStream.getTracks().forEach((track) => track.stop());
-		mediaStream = null;
 	}
 
 	mediaRecorder = null;
@@ -62,7 +62,14 @@ async function startRecording() {
 			throw new Error('getUserMedia is not available in this browser.');
 		}
 
-		mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+		if (!mediaStream) {
+			if (!microphoneStreamPromise) {
+				microphoneStreamPromise = navigator.mediaDevices.getUserMedia({ audio: true });
+			}
+
+			mediaStream = await microphoneStreamPromise;
+		}
+
 		mediaRecorder = new MediaRecorder(mediaStream);
 
 		mediaRecorder.ondataavailable = (event) => {
@@ -75,7 +82,8 @@ async function startRecording() {
 			const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
 			playbackUrl = URL.createObjectURL(blob);
 			playback.src = playbackUrl;
-			setStatus('idle');
+			playback.load();
+			setStatus('Press to start recording');
 			setControls(false);
 			cleanup();
 		};
@@ -89,14 +97,15 @@ async function startRecording() {
 		}, 3000);
 	} catch (error) {
 		cleanup();
-		setStatus('idle');
+		setStatus('Press to start recording');
 		setControls(false);
 		setError(error instanceof Error ? error.message : 'Unable to start recording.');
+		microphoneStreamPromise = null;
 	}
 }
 
 function stopRecording() {
-	if (!mediaRecorder || mediaRecorder.state !== 'recording') {
+	if (!mediaRecorder || (mediaRecorder.state !== 'recording' && mediaRecorder.state !== 'paused')) {
 		return;
 	}
 
@@ -108,5 +117,38 @@ function stopRecording() {
 	mediaRecorder.stop();
 }
 
-recordButton.addEventListener('click', startRecording);
-stopButton.addEventListener('click', stopRecording);
+window.addEventListener('beforeunload', () => {
+	if (mediaStream) {
+		mediaStream.getTracks().forEach((track) => track.stop());
+		mediaStream = null;
+	}
+
+	if (microphoneStreamPromise) {
+		microphoneStreamPromise = null;
+	}
+});
+
+function toggleRecording() {
+	if (!mediaRecorder) {
+		void startRecording();
+		return;
+	}
+
+	if (mediaRecorder.state === 'recording') {
+		mediaRecorder.pause();
+		setStatus('paused');
+		setControls(true);
+		return;
+	}
+
+	if (mediaRecorder.state === 'paused') {
+		mediaRecorder.resume();
+		setStatus('recording');
+		setControls(true);
+	}
+}
+
+recordButton.addEventListener('click', toggleRecording);
+if (stopButton) {
+	stopButton.addEventListener('click', stopRecording);
+}

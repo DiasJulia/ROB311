@@ -1,1 +1,47 @@
+.record-toggle-button {
+	width: 3.25rem;
+	height: 3.25rem;
+	padding: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 999px;
+	position: relative;
+}
+
+.record-toggle-button .record-icon,
+.record-toggle-button .pause-icon {
+	display: block;
+	position: absolute;
+	transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.record-toggle-button .record-icon {
+	width: 1.5rem;
+	height: 1.5rem;
+	border: 2px solid currentColor;
+    background: currentColor;
+	border-radius: 50%;
+	box-sizing: border-box;
+	transform: scale(1);
+}
+
+.record-toggle-button .pause-icon {
+	width: 0.95rem;
+	height: 0.95rem;
+	opacity: 0;
+	transform: scale(0.9);
+	background: currentColor;
+	border-radius: 0.15rem;
+}
+
+.record-toggle-button.is-recording .record-icon {
+	opacity: 0;
+	transform: scale(0.7);
+}
+
+.record-toggle-button.is-recording .pause-icon {
+	opacity: 1;
+	transform: scale(1);
+}
 

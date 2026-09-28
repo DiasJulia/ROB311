@@ -9,20 +9,21 @@
 </head>
 <body class="bg-light">
 	<main class="container py-5">
+        <h1 class="h3 fw-semibold mb-3">Voice Emotion Recognition</h1>
+		<p class="text-body-secondary mb-4">Record a short audio clip and see if an AI model can recognize emotions in your voice.</p>
 		<div class="row justify-content-center">
 			<div class="col-12 col-md-8 col-lg-6">
 				<section class="card shadow-sm">
 					<div class="card-body p-4 p-md-5">
-						<h1 class="h3 fw-semibold mb-3">Voice Emotion Recognition</h1>
-						<p class="text-body-secondary mb-4">Record a short audio clip and see if an AI model can recognize emotions in your voice.</p>
-						<div class="d-flex gap-2 flex-wrap mb-3">
-							<button id="record-button" type="button" class="btn btn-primary">Record</button>
-							<button id="stop-button" type="button" class="btn btn-outline-secondary" disabled>Stop</button>
+						<div class="d-flex flex-column gap-2 flex-wrap mb-3 align-items-center">
+							<button id="record-button" type="button" class="btn btn-secondary record-toggle-button" aria-label="Start recording" title="Start recording">
+								<span class="record-icon" aria-hidden="true"></span>
+								<span class="pause-icon" aria-hidden="true"></span>
+							</button>
+							<p id="status-text" class="mb-0 fw-semibold text-uppercase small text-body-secondary">Press to start recording</p>
 						</div>
-
-						<p id="status-text" class="mb-2 fw-semibold text-uppercase small text-body-secondary">idle</p>
-						<p id="error-text" class="alert alert-danger mb-0 py-2 px-3" aria-live="assertive"></p>
-						<div class="mt-3">
+						<p id="error-text" class="alert alert-danger mb-0 py-2 px-3 d-none" aria-live="assertive"></p>
+						<div class="mt-3 d-none" id="playback-container">
 							<label for="recording-playback" class="form-label">Last recording</label>
 							<audio id="recording-playback" class="w-100" controls></audio>
 						</div>

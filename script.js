@@ -87,7 +87,7 @@ function clearPlayback() {
 
 	latestAudioBlob = null;
 	playbackContainer.classList.add('d-none');
-	inferenceContainer.classList.add('d-none');
+	// inferenceContainer.classList.add('d-none');
 	inferButton.disabled = true;
 	inferenceText.textContent = 'Record audio first to enable inference.';
 
@@ -96,7 +96,7 @@ function clearPlayback() {
 		wavesurfer = null;
 	}
 	playButton.disabled = true;
-	playButton.textContent = '▶ Play';
+	playButton.textContent = 'Play';
 	updateProgress(0, 0);
 }
 
@@ -135,8 +135,8 @@ function setupWavesurfer(url) {
 		updateProgress(0, duration);
 	});
 	wavesurfer.on('timeupdate', (t) => updateProgress(t, wavesurfer.getDuration()));
-	wavesurfer.on('play', () => { playButton.textContent = '⏸ Pause'; });
-	wavesurfer.on('pause', () => { playButton.textContent = '▶ Play'; });
+	wavesurfer.on('play', () => { playButton.classList.replace('btn-primary', 'btn-secondary'); });
+	wavesurfer.on('pause', () => { playButton.textContent = 'Play'; });
 
 	wavesurfer.load(url);
 }

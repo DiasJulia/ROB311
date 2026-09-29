@@ -45,3 +45,17 @@
 	transform: scale(1);
 }
 
+.spectrogram-cursor {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: 0;
+	width: 2px;
+	background: #dc3545;
+	pointer-events: none;
+}
+
+#spectrogram-wrap {
+	cursor: pointer;
+}
+

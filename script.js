@@ -23,7 +23,10 @@ const recordButton = document.getElementById('record-button');
 const stopButton = document.getElementById('stop-button');
 const statusText = document.getElementById('status-text');
 const errorText = document.getElementById('error-text');
-const playback = document.getElementById('recording-playback');
+const playButton = document.getElementById('play-button');
+const timeText = document.getElementById('time-text');
+const spectrogramWrap = document.getElementById('spectrogram-wrap');
+const spectrogramCursor = document.getElementById('spectrogram-cursor');
 const playbackContainer = document.getElementById('playback-container');
 const inferenceContainer = document.getElementById('inference-container');
 const modelSelect = document.getElementById('model-select');
@@ -83,10 +86,6 @@ function clearPlayback() {
 	}
 
 	latestAudioBlob = null;
-	if (playback) {
-		playback.removeAttribute('src');
-		playback.load();
-	}
 	playbackContainer.classList.add('d-none');
 	inferenceContainer.classList.add('d-none');
 	inferButton.disabled = true;
@@ -96,6 +95,50 @@ function clearPlayback() {
 		wavesurfer.destroy();
 		wavesurfer = null;
 	}
+	playButton.disabled = true;
+	playButton.textContent = '▶ Play';
+	updateProgress(0, 0);
+}
+
+function formatTime(seconds) {
+	const m = Math.floor(seconds / 60);
+	const s = Math.floor(seconds % 60);
+	return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function updateProgress(current, total) {
+	const pct = total > 0 ? Math.min(current / total, 1) * 100 : 0;
+	spectrogramCursor.style.left = `${pct}%`;
+	timeText.textContent = `${formatTime(current)} / ${formatTime(total)}`;
+}
+
+function setupWavesurfer(url) {
+	wavesurfer = WaveSurfer.create({
+		container: '#waveform',
+		waveColor: '#0d6efd',
+		progressColor: '#0a58ca',
+		cursorColor: '#dc3545',
+		cursorWidth: 2,
+		height: 80,
+		plugins: [
+			Spectrogram.create({
+				container: '#spectrogram',
+				labels: true,
+				height: 120,
+				splitChannels: false
+			})
+		]
+	});
+
+	wavesurfer.on('ready', (duration) => {
+		playButton.disabled = false;
+		updateProgress(0, duration);
+	});
+	wavesurfer.on('timeupdate', (t) => updateProgress(t, wavesurfer.getDuration()));
+	wavesurfer.on('play', () => { playButton.textContent = '⏸ Pause'; });
+	wavesurfer.on('pause', () => { playButton.textContent = '▶ Play'; });
+
+	wavesurfer.load(url);
 }
 
 const F_SP = 200 / 3;
@@ -335,29 +378,10 @@ async function startRecording() {
 			latestAudioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
 			playbackUrl = URL.createObjectURL(latestAudioBlob);
 
-			if (playback) {
-				playback.src = playbackUrl;
-				playback.load();
-			}
-
-			wavesurfer = WaveSurfer.create({
-				container: '#waveform',
-				waveColor: '#0d6efd',
-				progressColor: '#0a58ca',
-				height: 80,
-				plugins: [
-					Spectrogram.create({
-						container: '#spectrogram',
-						labels: true,
-						height: 120,
-						splitChannels: false
-					})
-				]
-			});
-			wavesurfer.load(playbackUrl);
-
 			playbackContainer.classList.remove('d-none');
 			inferenceContainer.classList.remove('d-none');
+			setupWavesurfer(playbackUrl);
+
 			inferenceText.textContent = 'Ready. Select a model and press "Evaluate".';
 			inferButton.disabled = false;
 			setStatus('Press to start recording');
@@ -409,3 +433,11 @@ for (const [key, model] of Object.entries(MODELS)) {
 recordButton.addEventListener('click', toggleRecording);
 if (stopButton) stopButton.addEventListener('click', stopRecording);
 inferButton.addEventListener('click', () => { void runInference(); });
+
+playButton.addEventListener('click', () => wavesurfer?.playPause());
+
+spectrogramWrap.addEventListener('click', (e) => {
+	if (!wavesurfer) return;
+	const rect = spectrogramWrap.getBoundingClientRect();
+	wavesurfer.seekTo((e.clientX - rect.left) / rect.width);
+});

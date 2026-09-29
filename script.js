@@ -395,7 +395,7 @@ async function startRecording() {
 
 		stopTimerId = window.setTimeout(() => {
 			stopRecording();
-		}, 3000);
+		}, 10000);
 	} catch (error) {
 		cleanup();
 		setStatus('Press to start recording');
@@ -405,7 +405,7 @@ async function startRecording() {
 }
 
 function stopRecording() {
-	if (!mediaRecorder || (mediaRecorder.state !== 'recording' && mediaRecorder.state !== 'paused')) return;
+	if (!mediaRecorder || mediaRecorder.state !== 'recording') return;
 	setStatus('processing');
 	if (stopTimerId) { clearTimeout(stopTimerId); stopTimerId = null; }
 	mediaRecorder.stop();
@@ -417,8 +417,7 @@ window.addEventListener('beforeunload', () => {
 
 function toggleRecording() {
 	if (!mediaRecorder) return void startRecording();
-	if (mediaRecorder.state === 'recording') { mediaRecorder.pause(); setStatus('paused'); setControls(true); return; }
-	if (mediaRecorder.state === 'paused') { mediaRecorder.resume(); setStatus('recording'); setControls(true); }
+	if (mediaRecorder.state === 'recording') return void stopRecording();
 }
 
 for (const [key, model] of Object.entries(MODELS)) {
